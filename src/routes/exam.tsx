@@ -27,6 +27,7 @@ function ExamPage() {
   const [remaining, setRemaining] = useState(EXAM_DURATION_SECONDS);
   const [warning, setWarning] = useState<string | null>(null);
   const stateRef = useRef<ExamState | null>(null);
+  const suppressViolationUntilRef = useRef(0);
 
   // init
   useEffect(() => {
@@ -59,6 +60,10 @@ function ExamPage() {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     navigate({ to: "/result" });
   }, [navigate]);
+
+  const shouldIgnoreViolation = useCallback(() => {
+    return Date.now() < suppressViolationUntilRef.current;
+  }, []);
 
   const addViolation = useCallback(
     (reason: string) => {
@@ -93,10 +98,15 @@ function ExamPage() {
     if (!state) return;
 
     const onVis = () => {
+      if (shouldIgnoreViolation()) return;
       if (document.visibilityState === "hidden") addViolation("Tab switched / window hidden");
     };
-    const onBlur = () => addViolation("Browser focus lost");
+    const onBlur = () => {
+      if (shouldIgnoreViolation()) return;
+      addViolation("Browser focus lost");
+    };
     const onFs = () => {
+      if (shouldIgnoreViolation()) return;
       if (!isFullscreen()) {
         addViolation("Exited fullscreen mode");
         enterFullscreen();
@@ -130,7 +140,7 @@ function ExamPage() {
       document.removeEventListener("cut", onCopy);
       document.removeEventListener("selectstart", onSelect);
     };
-  }, [state, addViolation]);
+  }, [state, addViolation, shouldIgnoreViolation]);
 
   if (!state) return null;
 
@@ -292,7 +302,11 @@ function ExamPage() {
             <Button
               variant="destructive"
               onClick={() => {
+                // Native confirm dialogs can trigger blur/visibility events.
+                // Briefly suppress anti-cheat listeners while this dialog is open.
+                suppressViolationUntilRef.current = Date.now() + 5000;
                 if (confirm("Submit your exam? This cannot be undone.")) submit();
+                suppressViolationUntilRef.current = Date.now() + 500;
               }}
             >
               <Check className="w-4 h-4 mr-1" /> Submit Exam
