@@ -28,6 +28,7 @@ function ExamPage() {
   const [warning, setWarning] = useState<string | null>(null);
   const stateRef = useRef<ExamState | null>(null);
   const suppressViolationUntilRef = useRef(0);
+  const focusViolationArmedRef = useRef(true);
 
   // init
   useEffect(() => {
@@ -82,6 +83,16 @@ function ExamPage() {
     [submit]
   );
 
+  const addFocusViolationOnce = useCallback(
+    (reason: string) => {
+      if (shouldIgnoreViolation()) return;
+      if (!focusViolationArmedRef.current) return;
+      focusViolationArmedRef.current = false;
+      addViolation(reason);
+    },
+    [addViolation, shouldIgnoreViolation]
+  );
+
   // Timer
   useEffect(() => {
     if (!state) return;
@@ -98,12 +109,18 @@ function ExamPage() {
     if (!state) return;
 
     const onVis = () => {
-      if (shouldIgnoreViolation()) return;
-      if (document.visibilityState === "hidden") addViolation("Tab switched / window hidden");
+      if (document.visibilityState === "hidden") {
+        addFocusViolationOnce("Tab switched / window hidden");
+        return;
+      }
+      // Re-arm when user returns, so next tab switch counts once.
+      focusViolationArmedRef.current = true;
     };
     const onBlur = () => {
-      if (shouldIgnoreViolation()) return;
-      addViolation("Browser focus lost");
+      addFocusViolationOnce("Browser focus lost");
+    };
+    const onFocus = () => {
+      focusViolationArmedRef.current = true;
     };
     const onFs = () => {
       if (shouldIgnoreViolation()) return;
@@ -119,6 +136,7 @@ function ExamPage() {
 
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
     document.addEventListener("fullscreenchange", onFs);
     document.addEventListener("contextmenu", onContext);
     document.addEventListener("keydown", onKey);
@@ -132,6 +150,7 @@ function ExamPage() {
     return () => {
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
       document.removeEventListener("fullscreenchange", onFs);
       document.removeEventListener("contextmenu", onContext);
       document.removeEventListener("keydown", onKey);
@@ -140,7 +159,7 @@ function ExamPage() {
       document.removeEventListener("cut", onCopy);
       document.removeEventListener("selectstart", onSelect);
     };
-  }, [state, addViolation, shouldIgnoreViolation]);
+  }, [state, addFocusViolationOnce, shouldIgnoreViolation, addViolation]);
 
   if (!state) return null;
 
